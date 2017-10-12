@@ -1,0 +1,68 @@
+#!/bin/sh
+
+exitWithError() {
+    echo $1
+    exit 1
+}
+
+ALPINE_ROOTFS_FILE=alpine-minirootfs-3.6.2-x86_64.tar.gz
+ALPINE_ROOFS_LOCATION=http://dl-cdn.alpinelinux.org/alpine/v3.6/releases/x86_64/${ALPINE_ROOTFS_FILE}
+WORKING_DIR=/tmp/smocker
+ROOTFS_DIR=rootfs
+CGROUP_NAME=scratch-$$
+
+
+stat $WORKING_DIR 2>&1 > /dev/null || mkdir $WORKING_DIR &>/dev/null || exitWithError "Cannot create working dir ${WORKING_DIR}"
+cd $WORKING_DIR
+
+if [ "$1" = "exec" ]; then
+    # TODO add the launched process to the
+    # cgroup of the joined container
+    UNID=`pgrep unshare`
+    TID=`pgrep --parent $UNID -u root`
+    # join the namespace of another container
+    sudo nsenter --pid=/proc/${TID}/ns/pid \
+        unshare --mount-proc=$ROOTFS_DIR/proc \
+        chroot $ROOTFS_DIR $2
+    echo
+elif [ "$1" = "pull" ]; then
+    echo "Pulling Alpine Linux root image..."
+    wget -nc $ALPINE_ROOFS_LOCATION
+    sudo mkdir $ROOTFS_DIR || true
+    sudo tar -xzf $ALPINE_ROOTFS_FILE -C $ROOTFS_DIR
+    sudo mount -t proc proc $ROOTFS_DIR/proc
+elif [ "$1" = "rmi" ]; then
+    sudo rm -r $ROOTFS_DIR
+    rm $ALPINE_ROOTFS_FILE
+    sudo rmdir /sys/fs/cgroup/memory/$CGROUP_NAME
+elif [ "$1" = "run" ]; then
+    command=$2
+    if [ "$2" = "-m" ] || [ "$2" = "--memory" ]; then
+        # limit memory available to the
+        # conatiner
+        command=$4
+        memLimit=$3
+        sudo mkdir /sys/fs/cgroup/memory/$CGROUP_NAME
+        sudo sh -c "echo $memLimit > /sys/fs/cgroup/memory/$CGROUP_NAME/memory.limit_in_bytes"
+        sudo sh -c "echo \"0\" > /sys/fs/cgroup/memory/$CGROUP_NAME/memory.swappiness"
+        # we still don't know the pid of
+        # the command to insert into the cgroup here
+        sudo sh -c "sleep 1; echo \`pgrep -n -f $command\` > /sys/fs/cgroup/memory/$CGROUP_NAME/tasks" &
+    fi
+    # unshare pid namespace from host's kernel
+    # and launch a command confining its root
+    # mount point to rootfs
+    sudo unshare -p -f --mount-proc=$PWD/$ROOTFS_DIR/proc \
+        chroot $ROOTFS_DIR $command
+    if [ "$2" = "-m" ] || [ "$2" = "--memory" ]; then
+        sudo rmdir /sys/fs/cgroup/memory/$CGROUP_NAME
+    fi
+else
+    echo "${0} <command> <arguments>:"
+    echo "Commands available:"
+    echo "    pull  : download Alpine Linux image from Internet"
+    echo "    rmi   : remove Alpine Linux image from disk"
+    echo "    run   : run specified command in the container"
+    echo "    {-m|--memory} memory in bytes to restrict the process to"
+    echo "    exec  : execute specified command in the container"
+fi
