@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Pure POSIX shell implementation
+# of a container runtime main functionalities.
+
 exitWithError() {
     echo $1
     exit 1
@@ -7,7 +10,7 @@ exitWithError() {
 
 ALPINE_ROOTFS_FILE=alpine-minirootfs-3.6.2-x86_64.tar.gz
 ALPINE_ROOFS_LOCATION=http://dl-cdn.alpinelinux.org/alpine/v3.6/releases/x86_64/${ALPINE_ROOTFS_FILE}
-WORKING_DIR=/tmp/smocker
+WORKING_DIR=/tmp/smoker
 ROOTFS_DIR=rootfs
 CGROUP_NAME=scratch-$$
 
